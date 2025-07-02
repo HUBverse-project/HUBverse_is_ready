@@ -662,13 +662,7 @@
                     Bạn chưa đăng nhập. Bạn còn <span id="chat-tries-count" class="font-bold">3</span> lượt hỏi thử nghiệm. <button class="auth-btn login-btn font-bold underline">Đăng nhập</button> để sử dụng không giới hạn.
                  </div>
                 <div id="chat-box" class="p-6 h-[50vh] overflow-y-auto flex flex-col space-y-4">
-                    <!-- Initial AI message -->
-                    <div class="flex items-start space-x-3">
-                        <div class="bg-sky-500 p-2 rounded-full flex-shrink-0"><i data-lucide="bot" class="w-5 h-5 text-white"></i></div>
-                        <div class="bg-slate-700 p-3 rounded-lg rounded-tl-none">
-                            <p>Xin chào! Tôi là trợ lý AI của HUBverse. Tôi có thể giúp gì cho bạn về các vấn đề học tập và thủ tục tại HUB?</p>
-                        </div>
-                    </div>
+                    <!-- Chat messages will be dynamically inserted here -->
                 </div>
                 <div class="p-4 border-t border-slate-700">
                     <div class="flex items-center bg-slate-700 rounded-lg">
@@ -1267,19 +1261,29 @@
         const sendBtn = document.getElementById('chat-send-btn');
         const chatTriesCount = document.getElementById('chat-tries-count');
 
-        async function getAIResponse(message) {
-            const systemPrompt = "Bạn là một trợ lý AI thân thiện và hiểu biết của HUBverse, hệ sinh thái dành cho sinh viên Đại học Ngân hàng TP.HCM. Hãy trả lời các câu hỏi của sinh viên một cách hữu ích, tập trung vào các chủ đề như học tập, cuộc sống sinh viên, định hướng sự nghiệp, và các vấn đề xã hội mà sinh viên quan tâm. Luôn giữ giọng văn tích cực và khuyến khích. Trả lời bằng tiếng Việt.";
-            const fullPrompt = `${systemPrompt}\n\nCâu hỏi của sinh viên: "${message}"`;
+        const chatHistory = [];
 
-            const apiKey = ""; // API key will be provided by the environment
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
-
-            const payload = {
-                contents: [{
-                    role: "user",
-                    parts: [{ text: fullPrompt }]
-                }]
+        function initializeChat() {
+            chatBox.innerHTML = ''; // Clear any static HTML
+            const systemInstruction = {
+                role: "user",
+                parts: [{ text: "Bạn là một trợ lý AI tên là HUB-AI, một người bạn đồng hành thân thiện và hiểu biết trong hệ sinh thái HUBverse dành cho sinh viên Đại học Ngân hàng TP.HCM. Nhiệm vụ của bạn là hỗ trợ sinh viên bằng cách trả lời các câu hỏi của họ một cách hữu ích, chính xác và an toàn. Hãy tập trung vào các chủ đề như: thủ tục của trường, tài liệu học tập, mẹo học tập hiệu quả, định hướng sự nghiệp, cuộc sống sinh viên, và các vấn đề xã hội mà sinh viên quan tâm. Luôn giữ giọng văn tích cực, chuyên nghiệp nhưng gần gũi, và khuyến khích. Luôn trả lời bằng tiếng Việt. Không trả lời các câu hỏi có hại hoặc không phù hợp." }]
             };
+            const initialGreeting = {
+                role: "model",
+                parts: [{ text: "Chào bạn! Mình là HUB-AI, trợ lý ảo của HUBverse. Mình ở đây để giúp bạn giải đáp mọi thắc mắc về cuộc sống và học tập tại Đại học Ngân hàng. Bạn cần mình hỗ trợ gì hôm nay?" }]
+            };
+
+            chatHistory.push(systemInstruction);
+            chatHistory.push(initialGreeting);
+            
+            appendMessage(initialGreeting.parts[0].text, 'ai');
+        }
+
+        async function getAIResponse(history) {
+            const apiKey = ""; // API key is injected by the environment
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+            const payload = { contents: history };
 
             try {
                 const response = await fetch(apiUrl, {
@@ -1289,22 +1293,15 @@
                 });
 
                 if (!response.ok) {
-                    console.error("API Error:", response.status, await response.text());
+                    const errorBody = await response.text();
+                    console.error("API Error:", response.status, errorBody);
                     return "Rất tiếc, tôi đang gặp sự cố kết nối. Vui lòng thử lại sau.";
                 }
 
                 const result = await response.json();
-
-                if (result.candidates && result.candidates.length > 0 &&
-                    result.candidates[0].content && result.candidates[0].content.parts &&
-                    result.candidates[0].content.parts.length > 0) {
-                    let text = result.candidates[0].content.parts[0].text;
-                    // Basic Markdown to HTML conversion
-                    text = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>'); // Bold
-                    text = text.replace(/\*(.*?)\*/g, '<em>$1</em>');       // Italic
-                    text = text.replace(/`([^`]+)`/g, '<code>$1</code>');   // Inline code
-                    text = text.replace(/\n/g, '<br>'); // New lines
-                    return text;
+                
+                if (result.candidates && result.candidates[0]?.content?.parts[0]?.text) {
+                    return result.candidates[0].content.parts[0].text;
                 } else {
                     console.error("Unexpected API response structure:", result);
                     return "Tôi không thể xử lý câu trả lời lúc này. Vui lòng thử lại.";
@@ -1317,12 +1314,19 @@
 
         function appendMessage(message, sender) {
             const messageWrapper = document.createElement('div');
+            let formattedMessage = message;
+            if (sender === 'ai') {
+                formattedMessage = formattedMessage.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+                formattedMessage = formattedMessage.replace(/\*(.*?)\*/g, '<em>$1</em>');
+                formattedMessage = formattedMessage.replace(/`([^`]+)`/g, '<code>$1</code>');
+                formattedMessage = formattedMessage.replace(/\n/g, '<br>');
+            }
+
             let messageHTML = '';
             if (sender === 'user') {
                 messageHTML = `<div class="flex items-start space-x-3 justify-end"><div class="bg-slate-600 p-3 rounded-lg rounded-tr-none"><p>${message}</p></div><div class="bg-indigo-500 p-2 rounded-full flex-shrink-0"><i data-lucide="user" class="w-5 h-5 text-white"></i></div></div>`;
             } else if (sender === 'ai') {
-                // Use innerHTML to render the formatted text from the AI
-                messageHTML = `<div class="flex items-start space-x-3"><div class="bg-sky-500 p-2 rounded-full flex-shrink-0"><i data-lucide="bot" class="w-5 h-5 text-white"></i></div><div class="bg-slate-700 p-3 rounded-lg rounded-tl-none"><p>${message}</p></div></div>`;
+                messageHTML = `<div class="flex items-start space-x-3"><div class="bg-sky-500 p-2 rounded-full flex-shrink-0"><i data-lucide="bot" class="w-5 h-5 text-white"></i></div><div class="bg-slate-700 p-3 rounded-lg rounded-tl-none"><p>${formattedMessage}</p></div></div>`;
             } else { // Typing indicator
                  messageHTML = `<div id="typing-indicator" class="flex items-start space-x-3"><div class="bg-sky-500 p-2 rounded-full flex-shrink-0"><i data-lucide="bot" class="w-5 h-5 text-white"></i></div><div class="bg-slate-700 p-3 rounded-lg rounded-tl-none typing-indicator"><span></span><span></span><span></span></div></div>`;
             }
@@ -1350,15 +1354,19 @@
             }
 
             appendMessage(message, 'user');
+            chatHistory.push({ role: "user", parts: [{ text: message }] });
+
             chatInput.value = '';
             chatInput.disabled = true;
             sendBtn.disabled = true;
             appendMessage('', 'typing');
 
-            const aiResponse = await getAIResponse(message);
+            const rawResponse = await getAIResponse(chatHistory);
             
             document.getElementById('typing-indicator')?.parentElement.remove();
-            appendMessage(aiResponse, 'ai');
+            appendMessage(rawResponse, 'ai');
+            chatHistory.push({ role: "model", parts: [{ text: rawResponse }] });
+
             chatInput.disabled = false;
             sendBtn.disabled = false;
             chatInput.focus();
@@ -1367,7 +1375,9 @@
         sendBtn.addEventListener('click', handleSendMessage);
         chatInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); handleSendMessage(); } });
     
-        // --- FIXES ---
+        // --- FIXES & INITIALIZERS ---
+        initializeChat();
+
         // Fix for Digital Library
         document.querySelectorAll('.faculty-selector').forEach(selector => {
             selector.addEventListener('click', () => {
